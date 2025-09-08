@@ -2,22 +2,22 @@
  * OnboardingOverlay (centered prose / inline text version)
  * -----------------------------------------------------------------------------
  * 目的:
- *  - 初回ユーザに「サービスの思想」を“中央寄せの読み物”として提示し、
- *    「小石を投げる」クリックで /start → /pebble を実行し、最初の問いを
- *    ChatWindow へ受け渡す。
+ *  - 初回ユーザに「サービスの思想」を“中央寄せの読み物”として提示する。
+ *  - いまは「小石を投げる」クリック時に **即座にオーバーレイを閉じるだけ**。
+ *    /start → /pebble の実行やチャットへの受け渡しは **親コンポーネント側の責務**。
  *
  * 方針:
  *  - タイトルと本文はこのファイルに「直書き」する（API 取得しない）。
  *  - 画面上部に大きめタイトル、本文は段落ごとに中央寄せで表示。
- *  - 先頭1文字の強調（ドロップキャップ）は行わない。
+ *  - ドロップキャップなど過度な装飾は行わない。
  *
  * 注意:
- *  - /start /pebble はユーザ認証と CORS 設定が前提。別オリジンの場合は
- *    Rails 側の CORS(credentials:true) とクライアント fetch の
- *    credentials:"include" を必ず揃えること。
- *  - onFinish はオーバーレイを閉じたいときに親から渡す。未指定でも動作は可能。
+ *  - 表示/非表示は props.visible で親が制御する（本コンポーネントは受動）。
+ *  - onFinish は「閉じる」動作を親に依頼するためのコールバック。
+ *    クリック時に即 onFinish を呼ぶため、**ネットワーク結果に依存せず閉じる**。
+ *  - /start /pebble をここで実行しない設計に変更したため、CORS/認証等の注意は
+ *    親側（例: OnboardingGate）での fetch 実装に移譲すること。
  */
-
 "use client";
 
 import { useMemo, useState } from "react";
@@ -25,16 +25,11 @@ import { useMemo, useState } from "react";
 type Props = {
   visible: boolean; // 表示トグル（stage !== "done" 時に true）
   onFinish?: () => void; // オーバーレイを閉じたい時に呼ぶコールバック
-  pushToChat?: (text: string) => void; // 最初の問いを直接チャットに差し込みたい場合
 };
 
-export default function OnboardingOverlay({
-  visible,
-  onFinish,
-  pushToChat,
-}: Props) {
-  const [loading, setLoading] = useState(false); // /start, /pebble の実行中フラグ
-  const [error, setError] = useState<string | null>(null); // 通信失敗の簡易表示
+export default function OnboardingOverlay({ visible, onFinish }: Props) {
+  //　onboarding_Stageがfalseならば表示しない
+  if (!visible) return null;
 
   // --- 表示テキスト（直書き） -------------------------------------------------------
   // 理由: API 依存をやめ、確実に同一の内容を即表示するため。
@@ -63,53 +58,6 @@ export default function OnboardingOverlay({
     whiteSpace: "pre-wrap",
     wordBreak: "keep-all",
   };
-
-  // --- 小石アクション: /start → /pebble → ChatWindow へ渡す -------------------------
-  // 理由: 既存の会話サイクル開始導線を維持。/start でサイクル数を確定 → /pebble で初問取得。
-  // 注意: 401/CSRF/CORSで失敗しやすい層。エラーは簡潔に提示してユーザを詰まらせない。
-  async function handlePebble() {
-    setLoading(true);
-    setError(null);
-    try {
-      const st = await fetch(`/api/relay/onboarding/start`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-      });
-      if (!st.ok) throw new Error(`start ${st.status}`);
-
-      const res = await fetch(`/api/relay/onboarding/pebble`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-      });
-      if (!res.ok) throw new Error(`pebble ${res.status}`);
-
-      const data = (await res.json()) as { question?: string };
-      const q = data?.question || "（初期問いが未登録です）";
-
-      if (pushToChat) {
-        pushToChat(q);
-      } else {
-        // 既存の ChatWindow 連携（CustomEvent）
-        window.dispatchEvent(
-          new CustomEvent("onboarding:first-question", { detail: { text: q } })
-        );
-      }
-
-      onFinish?.(); // オーバーレイを閉じる（親で visible を false にする想定）
-    } catch (e: any) {
-      setError(e?.message ?? "小石の取得に失敗しました");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (!visible) return null;
 
   // --- レンダリング ---------------------------------------------------------------
   // 役割: タイトルを上部中央に、本文は段落で中央寄せ。フッタに「小石を投げる」。
@@ -169,17 +117,6 @@ export default function OnboardingOverlay({
               {p}
             </p>
           ))}
-
-          {loading && (
-            <div style={{ color: "#6b7280", fontSize: 13, marginTop: 8 }}>
-              通信中…
-            </div>
-          )}
-          {error && (
-            <div style={{ color: "#b91c1c", fontSize: 13, marginTop: 8 }}>
-              {error}
-            </div>
-          )}
         </div>
 
         {/* フッタ: 「小石を投げる」ボタン（中央寄せ）。 */}
@@ -193,16 +130,15 @@ export default function OnboardingOverlay({
           }}
         >
           <button
-            onClick={handlePebble}
-            disabled={loading}
+            onClick={() => onFinish?.()}
             style={{
               padding: "10px 18px",
               borderRadius: 10,
               border: "1px solid #111827",
-              background: loading ? "#d1d5db" : "#111827",
+              background: "#111827",
               color: "#fff",
               fontWeight: 700,
-              cursor: loading ? "not-allowed" : "pointer",
+              cursor: "pointer",
               minWidth: 140,
             }}
             aria-label="小石を投げる"
