@@ -1,103 +1,141 @@
+// Server Component: 認証トークンを用いたサーバ側フェッチで 401 を回避する。
+// - 役割: 認証チェック、オンボーディング状態の取得、思想本文の事前取得。
+// - 注意: クライアントから philosophy を直接叩かない（devise-jwt が Authorization: Bearer を要求するため）。
+
+import Link from "next/link";
+import Header from "@components/Header";
+import ChatWindow from "@components/ChatWindow";
+import { cookies } from "next/headers";
+import Sidebar from "@components/Sidebar";
+import BlankPane from "@components/BlankPane";
+import { redirect } from "next/navigation";
+import OnboardingOverlay from "@components/OnboardingOverlay";
+import OnboardingGate from "@components/OnboardingGate";
 import Image from "next/image";
 
-export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE!;
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
+// ---- Server-only fetchers ----------------------------------------------------
+// サーバ側から Bearer を付けて叩くことで、devise-jwt 環境でも 401 を防ぐ。
+
+async function fetchOnboardingStatus(token?: string) {
+  const headers: HeadersInit = { Accept: "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`; // 認証が必要なため付与
+  const res = await fetch(`${API_BASE}/api/onboarding/status`, {
+    headers,
+    cache: "no-store",
+  });
+  if (!res.ok) return { stage: "done" }; // フェイルセーフ: 画面が詰まらないように done 扱い
+  return res.json() as Promise<{
+    stage: string;
+    cycles_done: number;
+    cycles_target: number;
+  }>;
+}
+
+export const dynamic = "force-dynamic"; // SSR で Cookie を確実に使う
+export const revalidate = 0;
+
+async function getHealthWithAuth(token: string) {
+  const res = await fetch(`${API_BASE}/health`, {
+    cache: "no-store",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 401) redirect("/login");
+  return res.json();
+}
+
+// API: /api/me で本人性を確認（サーバ側から Bearer 付与）
+async function fetchMe(token?: string) {
+  const headers: HeadersInit = { Accept: "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}/api/me`, { headers, cache: "no-store" });
+  if (!res.ok) return null;
+  return res.json() as Promise<{ id: string; name: string; email: string }>;
+}
+
+// ---- Page --------------------------------------------------------------------
+// - 初期レンダリング時に必要情報をサーバで取り切る。
+// - showOverlay=true の場合のみ思想本文を先読みして Overlay へ渡す（B案のポイント）。
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ pane?: string }>;
+}) {
+  // 認証トークンの取得（Cookie 由来）。Bearer で下流 API を叩くために使う。
+  const token = (await cookies()).get("token")?.value;
+
+  // 本人性チェック（未ログインなら /login へ）
+  const me = await fetchMe(token);
+  if (!me) redirect("/login");
+  if (!token) redirect("/login");
+
+  // 右ペイン種別
+  const sp = await searchParams;
+  const pane = sp?.pane ?? "chat";
+  const uid = (await cookies()).get("uid")?.value;
+
+  // オンボーディング状態をサーバ側で取得（Bearer 付き）
+  const status = await fetchOnboardingStatus(token);
+  const showOverlay = status.stage !== "done";
+
+  // 右ペイン分岐（UI 構造だけなので説明は最小に）
+  const RightPane =
+    pane === "chat" ? (
+      <ChatWindow uid={uid} />
+    ) : pane === "selfmap" ? (
+      <BlankPane title="セルフマップ" />
+    ) : pane === "mental" ? (
+      <BlankPane title="自分の仕組み（メンタルモデル）" />
+    ) : pane === "goals" ? (
+      <BlankPane title="自分の目標" />
+    ) : pane === "actions" ? (
+      <BlankPane title="行動と結果" />
+    ) : pane === "feelings" ? (
+      <BlankPane title="感情の記録" />
+    ) : pane === "discoveries" ? (
+      <BlankPane title="今月の発見" />
+    ) : (
+      <BlankPane title="未定義のページ" />
+    );
+
+  // 画面主要部
+  return (
+    <>
+      <Header />
+      <main
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: 8,
+          padding: 2,
+          marginRight: "auto",
+        }}
+      >
+        <section
+          style={{
+            width: "10%",
+            maxWidth: "10%",
+          }}
+        >
+          <Sidebar active={pane} />
+        </section>
+
+        <section
+          style={{
+            width: "85%",
+            maxWidth: "85%",
+            boxSizing: "border-box",
+            marginLeft: "auto",
+          }}
+        >
+          {/* Overlay直呼び → Gateで表示制御 */}
+          <OnboardingGate initialVisible={showOverlay} />
+          {RightPane}
+        </section>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+    </>
   );
 }
