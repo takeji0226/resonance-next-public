@@ -21,7 +21,7 @@ const ITEMS: Item[] = [
     imagsrc: "/goal.jpg",
   },
   {
-    id: "goals",
+    id: "record",
     label: "自分を知る",
     imagsrc: "/record.jpg",
   },

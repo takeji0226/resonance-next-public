@@ -2,16 +2,13 @@
 // - 役割: 認証チェック、オンボーディング状態の取得、思想本文の事前取得。
 // - 注意: クライアントから philosophy を直接叩かない（devise-jwt が Authorization: Bearer を要求するため）。
 
-import Link from "next/link";
 import Header from "@components/Header";
 import ChatWindow from "@components/ChatWindow";
 import { cookies } from "next/headers";
 import Sidebar from "@components/Sidebar";
 import BlankPane from "@components/BlankPane";
 import { redirect } from "next/navigation";
-import OnboardingOverlay from "@components/OnboardingOverlay";
 import OnboardingGate from "@components/OnboardingGate";
-import Image from "next/image";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE!;
 
@@ -84,18 +81,10 @@ export default async function Home({
   const RightPane =
     pane === "chat" ? (
       <ChatWindow uid={uid} />
-    ) : pane === "selfmap" ? (
-      <BlankPane title="セルフマップ" />
-    ) : pane === "mental" ? (
-      <BlankPane title="自分の仕組み（メンタルモデル）" />
-    ) : pane === "goals" ? (
-      <BlankPane title="自分の目標" />
-    ) : pane === "actions" ? (
-      <BlankPane title="行動と結果" />
-    ) : pane === "feelings" ? (
-      <BlankPane title="感情の記録" />
-    ) : pane === "discoveries" ? (
-      <BlankPane title="今月の発見" />
+    ) : pane === "timeline" ? (
+      <BlankPane title="前に進む" />
+    ) : pane === "record" ? (
+      <BlankPane title="自分を知る" />
     ) : (
       <BlankPane title="未定義のページ" />
     );
