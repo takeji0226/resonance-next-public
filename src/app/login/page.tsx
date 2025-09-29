@@ -12,6 +12,7 @@ async function loginAction(formData: FormData) {
   const password = String(formData.get("password") ?? "");
   const nextPath = String(formData.get("next") ?? "/");
 
+  /**next.js内の /api/auth/login/route.tsにログイン処理を委譲*/
   const res = await fetch(`${API_BASE}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -19,31 +20,13 @@ async function loginAction(formData: FormData) {
     cache: "no-store",
   });
 
+  // /api/auth/login が Cookie へ保存する設計。ここでは結果だけ見る
+  const data = await res.json().catch(() => ({}) as any);
   if (!res.ok) {
-    redirect(`/login?e=invalid_credentials`);
+    const code = data?.error ?? "invalid_credentials";
+    redirect(`/login?e=${code}`);
   }
-
-  // Devise-jwt が返す Authorization: Bearer <token>
-  const auth =
-    res.headers.get("authorization") || res.headers.get("Authorization");
-  const token = auth?.replace(/^Bearer\s+/i, "");
-  if (!token) {
-    redirect(`/login?e=no_token`);
-  }
-
-  // httpOnly クッキーに保存（middleware/サーバーコンポーネントから参照可能）
-  (
-    await // httpOnly クッキーに保存（middleware/サーバーコンポーネントから参照可能）
-    cookies()
-  ).set("token", token, {
-    httpOnly: true,
-    path: "/",
-    maxAge: 60 * 60 * 24, // 24h（devise.rbのexpiration_timeと揃えると良い）
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-  });
-
-  redirect(nextPath);
+  redirect(data?.next ?? nextPath);
 }
 
 export default async function LoginPage({

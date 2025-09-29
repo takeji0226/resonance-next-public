@@ -71,7 +71,9 @@ export async function POST(req: Request) {
   }
 
   // Authorization: Bearer <JWT> を Cookie に保存
-  const auth = railsRes.headers.get("Authorization");
+  const auth =
+    railsRes.headers.get("Authorization") ||
+    railsRes.headers.get("authorization");
   if (!auth) {
     return Response.json(
       { error: "no_auth_header_from_backend" },
