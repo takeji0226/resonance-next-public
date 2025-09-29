@@ -44,6 +44,7 @@ next-env.d.ts
 # === secrets (絶対に公開しない) ===
 .env
 .env.*.local
+.env.local
 config/master.key
 config/credentials.yml.enc
 *.pem
