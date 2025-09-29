@@ -8,7 +8,7 @@ type HistoryResp = {
   messages: { id: number; role: Msg["role"]; content: string }[];
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE;
+const API_BASE = process.env.NEXTSELF_PUBLIC_API_BASE;
 
 export default function ChatWindow({ uid }: { uid?: string }) {
   const [messages, setMessages] = useState<Msg[]>([
@@ -125,7 +125,7 @@ export default function ChatWindow({ uid }: { uid?: string }) {
     try {
       // --- 通常チャット（既存APIがあるとき） ---
       if (!API_BASE) throw new Error("NEXT_PUBLIC_API_BASE is not set");
-      const res = await fetch(`${API_BASE}/api/chat`, {
+      const res = await fetch(`${API_BASE}/api/auth?to=/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
