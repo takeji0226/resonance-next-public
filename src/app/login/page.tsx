@@ -2,7 +2,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE!;
+const API_BASE = process.env.NEXTSELF_PUBLIC_API_BASE!;
 
 /** サーバーアクション：RailsにPOST → AuthorizationヘッダーからJWTを取得 → httpOnlyクッキー保存 → リダイレクト */
 async function loginAction(formData: FormData) {
@@ -12,10 +12,10 @@ async function loginAction(formData: FormData) {
   const password = String(formData.get("password") ?? "");
   const nextPath = String(formData.get("next") ?? "/");
 
-  const res = await fetch(`${API_BASE}/users/sign_in`, {
+  const res = await fetch(`${API_BASE}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ user: { email, password } }),
+    body: JSON.stringify({ email, password, next: nextPath }),
     cache: "no-store",
   });
 

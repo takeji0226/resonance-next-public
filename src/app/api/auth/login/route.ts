@@ -1,4 +1,23 @@
 // src/app/api/auth/login/route.ts
+
+/**
+ * route.ts
+ * -----------------------------------------------------------------------------
+ * 役割:
+ *  - Next.js 側の API エンドポイント (/api/auth/login) として動作。主にログイン時に実施
+ *  - フロントから受け取った email / password を Rails の /users/sign_in に転送。
+ *  - Rails が返す Authorization ヘッダから JWT を取り出し、HttpOnly Cookie("token") に保存。
+ *
+ * 理由:
+ *  - フロント(JS)からは HttpOnly Cookie に直接書き込めないため、サーバー側で処理する必要がある。
+ *  - JWT をクライアント JS で扱わず Cookie に格納することで、XSS による盗難リスクを減らす。
+ *
+ * 注意:
+ *  - Rails 側で devise-jwt が有効化されていることが前提（レスポンスヘッダに Authorization が含まれる）。
+ *  - Cookie は HttpOnly のため、クライアント JS からは参照できない。
+ *  - 本番環境では secure / sameSite の設定を適切に行うこと。
+ */
+
 import { cookies } from "next/headers";
 
 export async function GET() {
@@ -12,10 +31,12 @@ export async function GET() {
 export async function POST(req: Request) {
   // 入力取得（JSON/FORM 両対応）
   const ctype = req.headers.get("content-type") || "";
-  let email = "", password = "", nextUrl = "/";
+  let email = "",
+    password = "",
+    nextUrl = "/";
 
   if (ctype.includes("application/json")) {
-    const body = await req.json().catch(() => ({} as any));
+    const body = await req.json().catch(() => ({}) as any);
     email = body?.email ?? "";
     password = body?.password ?? "";
     nextUrl = body?.next || "/";
@@ -32,13 +53,16 @@ export async function POST(req: Request) {
 
   const apiBase = process.env.NEXT_PUBLIC_API_BASE;
   if (!apiBase) {
-    return Response.json({ error: "missing_NEXT_PUBLIC_API_BASE" }, { status: 500 });
+    return Response.json(
+      { error: "missing_NEXT_PUBLIC_API_BASE" },
+      { status: 500 }
+    );
   }
 
   // Rails（/users/sign_in）へ中継
   const railsRes = await fetch(`${apiBase}/users/sign_in`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ user: { email, password } }),
   });
 
@@ -49,7 +73,10 @@ export async function POST(req: Request) {
   // Authorization: Bearer <JWT> を Cookie に保存
   const auth = railsRes.headers.get("Authorization");
   if (!auth) {
-    return Response.json({ error: "no_auth_header_from_backend" }, { status: 500 });
+    return Response.json(
+      { error: "no_auth_header_from_backend" },
+      { status: 500 }
+    );
   }
   const token = auth.replace(/^Bearer\s+/i, "");
 
