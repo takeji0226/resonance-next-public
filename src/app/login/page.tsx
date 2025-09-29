@@ -2,7 +2,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-const API_BASE = process.env.NEXTSELF_PUBLIC_API_BASE!;
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_SELF!;
 
 /** サーバーアクション：RailsにPOST → AuthorizationヘッダーからJWTを取得 → httpOnlyクッキー保存 → リダイレクト */
 async function loginAction(formData: FormData) {

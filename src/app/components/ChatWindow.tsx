@@ -8,7 +8,7 @@ type HistoryResp = {
   messages: { id: number; role: Msg["role"]; content: string }[];
 };
 
-const API_BASE = process.env.NEXTSELF_PUBLIC_API_BASE;
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_SELF;
 
 export default function ChatWindow({ uid }: { uid?: string }) {
   const [messages, setMessages] = useState<Msg[]>([
@@ -72,9 +72,7 @@ export default function ChatWindow({ uid }: { uid?: string }) {
     if (!uid || !API_BASE) return;
     historyLoadedRef.current = true;
     try {
-      const res = await fetch(`${API_BASE}/api/chat/history`, {
-        credentials: "include",
-      });
+      const res = await fetch(`${API_BASE}/api/auth?to=/api/chat/history`);
       if (!res.ok) throw new Error(`history ${res.status}`);
       const data: HistoryResp = await res.json();
       if (data.messages.length > 0) {
@@ -120,15 +118,17 @@ export default function ChatWindow({ uid }: { uid?: string }) {
       if (el) el.style.height = `${MIN_H}px`;
     });
 
-    // 通常: Rails `/api/chat`。オンボーディング中は BFF 経由で `/onboarding/reply`。
+    // 通常: Rails `/api/chat`
     let assistantText = "";
     try {
       // --- 通常チャット（既存APIがあるとき） ---
       if (!API_BASE) throw new Error("NEXT_PUBLIC_API_BASE is not set");
       const res = await fetch(`${API_BASE}/api/auth?to=/api/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
         body: JSON.stringify({
           uid,
           message: userMsg.content,
