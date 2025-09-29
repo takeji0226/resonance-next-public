@@ -39,3 +39,21 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+
+# === secrets (絶対に公開しない) ===
+.env
+.env.*.local
+config/master.key
+config/credentials.yml.enc
+*.pem
+*.key
+*.crt
+
+# === node/next ===
+node_modules/
+/.next/
+/dist/
+/coverage
+*.log
+*.swp

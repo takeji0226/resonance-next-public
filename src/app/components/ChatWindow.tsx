@@ -1,17 +1,12 @@
 "use client";
-
-/**
- * ChatWindow
- * -----------------------------------------------------------------------------
- * 役割:
- *  - 通常チャットを提供する
- *
- * 注意:
- */
-
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type Msg = { id: string; role: "user" | "assistant"; content: string };
+
+type HistoryResp = {
+  conversation_id: number;
+  messages: { id: number; role: Msg["role"]; content: string }[];
+};
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE;
 
@@ -53,16 +48,70 @@ export default function ChatWindow({ uid }: { uid?: string }) {
     });
   }, [messages.length]);
 
+  // ===== ここから追加（useEffectは使わない実装） =====
+  // 最新の messages を参照するための参照。setState時に同じ配列を入れて同期させる。
+  const messagesRef = useRef<Msg[]>(messages);
+  messagesRef.current = messages; // renderごとに同期（副作用ではない）
+
+  // 履歴を一度だけ読むためのフラグ
+  const historyLoadedRef = useRef(false);
+
+  // 置き換え/追加操作の小ユーティリティ
+  function replaceMessages(next: Msg[]) {
+    setMessages(next);
+    messagesRef.current = next;
+  }
+  function pushMessage(msg: Msg) {
+    const next = [...messagesRef.current, msg];
+    replaceMessages(next);
+  }
+
+  // 履歴ロード（手動トリガ）
+  async function loadHistory() {
+    if (historyLoadedRef.current) return;
+    if (!uid || !API_BASE) return;
+    historyLoadedRef.current = true;
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/history`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(`history ${res.status}`);
+      const data: HistoryResp = await res.json();
+      if (data.messages.length > 0) {
+        const hist = data.messages.map((m) => ({
+          id: String(m.id),
+          role: m.role,
+          content: m.content,
+        }));
+        replaceMessages(hist);
+      }
+      // 履歴が0件なら既定の挨拶（現状のmessages）をそのまま維持
+    } catch {
+      // 失敗時は何もしない（既定の挨拶を保持）
+    }
+  }
+  // ===== 追加ここまで =====
+
   async function send(e?: React.FormEvent) {
     e?.preventDefault();
     if (!canSend) return;
+
+    // 初回送信前に履歴を取得（useEffect不使用のためここで手動実行）
+    //if (!historyLoadedRef.current) {
+    //  await loadHistory();
+    //}
 
     const userMsg: Msg = {
       id: crypto.randomUUID(),
       role: "user",
       content: input.trim(),
     };
-    setMessages((prev) => [...prev, userMsg]);
+
+    // 送信前時点の履歴を固定（リクエストのhistoryに使う）
+    const prev = messagesRef.current;
+
+    // UIへ即時反映
+    pushMessage(userMsg);
 
     // 送信後クリア
     setInput("");
@@ -79,10 +128,11 @@ export default function ChatWindow({ uid }: { uid?: string }) {
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           uid,
           message: userMsg.content,
-          history: messages.map(({ role, content }) => ({ role, content })),
+          history: prev.map(({ role, content }) => ({ role, content })),
         }),
       });
       if (!res.ok) throw new Error(`API ${res.status}`);
@@ -99,7 +149,7 @@ export default function ChatWindow({ uid }: { uid?: string }) {
       role: "assistant",
       content: assistantText,
     };
-    setMessages((prev) => [...prev, botMsg]);
+    pushMessage(botMsg);
   }
 
   const placeholder = useMemo(
@@ -122,6 +172,32 @@ export default function ChatWindow({ uid }: { uid?: string }) {
         overflow: "hidden",
       }}
     >
+      {/* 履歴を読み込む（必要時に手動トリガ） */}
+      <div
+        style={{
+          padding: 8,
+          borderBottom: "1px solid #eef2f7",
+          display: "flex",
+          justifyContent: "flex-end",
+        }}
+      >
+        <button
+          onClick={loadHistory}
+          disabled={!uid || historyLoadedRef.current}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: "1px solid #e5e7eb",
+            background: "#fafafa",
+            cursor:
+              !uid || historyLoadedRef.current ? "not-allowed" : "pointer",
+            opacity: !uid || historyLoadedRef.current ? 0.6 : 1,
+          }}
+        >
+          履歴を読み込む
+        </button>
+      </div>
+
       <div
         ref={listRef}
         style={{
