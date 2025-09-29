@@ -71,7 +71,7 @@ export default async function Home({
   // 右ペイン種別
   const sp = await searchParams;
   const pane = sp?.pane ?? "chat";
-  const uid = (await cookies()).get("uid")?.value;
+  const uid = me.id;
 
   // オンボーディング状態をサーバ側で取得（Bearer 付き）
   const status = await fetchOnboardingStatus(token);
